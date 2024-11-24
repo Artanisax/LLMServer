@@ -1,4 +1,6 @@
 __pycache__ 
 models/*
 !models/.gitkeep
+datasets/*
+!datasets/.gitkeep
 .cache
