@@ -1,27 +1,36 @@
 import gc
 import torch
-from llm import LLM
-from transformers import AutoTokenizer, AutoModel, pipeline
+from transformers import AutoModel
 
+from .llm import LLM
 
-class Chatglm3(LLM):
-    def __init__(self, id: str):
-        super.__init__(id)
+class ChatGLM3(LLM):
+    def __init__(self, id: str, lora: str=None):
+        super().__init__(id)
+        self.max_new_tokens = 256
+        self.num_beams = 1
+        self.temperature = 0.8
         self.model = AutoModel.from_pretrained(
             f"models/{id}",
             load_in_4bit=True,
-            local_files_only=True,
             trust_remote_code=True,
-        ).cuda().eval()
+            device_map="auto",
+        ).eval()
     
     def __del__(self):
-        del self.model, self.tokenizer
+        del self.tokenizer, self.model
         gc.collect()
         torch.cuda.empty_cache()
-        self.model, self.tokenizer = None, None
     
     def chat(self, query: str, history: list[dict]=None):
-        response, history = self.model.chat(self.tokenizer, query, history)
+        response, history = self.model.chat(
+            self.tokenizer,
+            query,
+            history,
+            max_length=self.max_new_tokens,
+            num_beams=self.num_beams,
+            temperature=self.temperature,
+        )
         return {
             "response": response,
             "history": history,
