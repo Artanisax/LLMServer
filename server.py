@@ -2,38 +2,33 @@ import os
 import json
 import socket
 import threading
-import subprocess
-import multiprocessing
 
-from .util import create_model, lora_finetune
+from util import create_model
 
-pool = multiprocessing.Pool(processes=2)  # for gpu tasks
 HOST = "localhost"
-PORT = 8899
-config_cnt = 0
-    
+PORT = 8082
+
+
 def handle(conn, address):
     recv = ""
     while True:
         data = conn.recv(1024)
-        print({"data": data})
         if not data:
             break
         recv += data.decode()
-        if recv[-2:] == "\r\n":
+        if data[-2:] == b"\r\n":
             recv = recv[:-2]
             break
-    conn.shutdown(socket.SHUT_RD)
-    # print("recv:\n", recv)
     
+    print("<server recv>\n", recv)
     send = parse(recv)
-    # print("send:", send)
-    conn.send(json.dumps(send).encode())
-    
+    print("<server send>\n", send)
+    conn.send(json.dumps(send).encode() + b"\r\n")
     conn.close()
-    # print("Close Connection")
+
 
 def upload(value: str):
+    print("upload")
     model = json.loads(value)
     id = model["id"]
     zip_file = model["zip_file"]
@@ -43,13 +38,16 @@ def upload(value: str):
         os.makedirs(f"models/{id}")
         with open(f"models/{id}.zip", "wb") as file:
             file.write(zip_file)
+        os.system()
         msg = "Succesfully uploaded."
     return {
         "type": "message",
         "value": msg,
     }
 
+
 def delete(id):
+    print("delete")
     if os.path.exists(f"models/{id}"):
         os.system(f"rm -rf models/{id}")
         msg = "Succesfully deleted."
@@ -60,37 +58,51 @@ def delete(id):
         "value": msg,
     }
 
-def subchat(config: dict):
-    env = "chatglm" if "ChatGLM" in id else "gemma"
-    with threading.Lock():
-        config_cnt += 1
-        config_path = f".cache/{config_cnt}.json"
-        with open(config_path, "w") as file:
-            json.dump(config, file)
-    cmd = f"conda run -n {env} python chat.py --config_path {config_path}"
-    ret = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    return ret.stdout
 
 def chat(value: dict):
+    print("chat")
+    def sub_chat(base: str, id: str, lora: str, query: str, history: list[dict]):
+        model = create_model(base, id, lora)
+        response = model.chat(query, history)
+        del model
+        return response
+
+    base = value["base"]
     id = value["id"]
-    with threading.Lock():
-        result = pool.apply(subchat, args=(value,))
+    lora = value["lora"]
+    query = value["query"]
+    history = value["history"]
+    
     return {
         "type": "chat",
-        "value": result,
+        "value": sub_chat(base, id, lora, query, history),
     }
+
 
 def finetune(value: dict):
-    return NotImplemented
-    id = value["id"]
+    print("finetune")
+    def sub_finetune(base: str, id: str, dataset: str, name: str, steps: int):
+        os.system(
+            f"conda run -n llm python finetune.py"
+            + f" --base {base}"
+            + f" --id {id}"
+            + f" --dataset {dataset}"
+            + f" --name {name}"
+            + f" --steps {steps}"
+        )
+
     base = value["base"]
+    id = value["id"]
     dataset = value["dataset"]
-    return {
-        "type": "message",
-        "value": lora_finetune(id, base, dataset),
-    }
+    name = value["name"]
+    steps = value["steps"]
+    sub_finetune(base, id, dataset, name, steps)
+
+    return {"type": "message", "value": f"{name}/checkpoint-{steps}"}
+
 
 def parse(recv: str):
+    print("parse")
     operate = {
         "upload": upload,
         "delete": delete,
@@ -100,20 +112,19 @@ def parse(recv: str):
     recv = json.loads(recv)
     return operate[recv["type"]](recv["value"])
 
+
 def main():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((HOST, PORT))
-    server_socket.listen(1)
-    
+    server_socket.listen(2)
+
     while True:
         print("Try Connection")
         try:
             conn, address = server_socket.accept()
-            print(conn, '\n', address)
-            # conn.settimeout(5)
             thread = threading.Thread(target=handle, args=(conn, address))
             thread.start()
-        
+
         except Exception as err:
             print(err)
             continue
