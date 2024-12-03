@@ -1,30 +1,12 @@
 import os
 import json
-import socket
-import threading
+import asyncio
+from websockets import serve
 
 from util import create_model
 
 HOST = "localhost"
-PORT = 8082
-
-
-def handle(conn, address):
-    recv = ""
-    while True:
-        data = conn.recv(1024)
-        if not data:
-            break
-        recv += data.decode()
-        if data[-2:] == b"\r\n":
-            recv = recv[:-2]
-            break
-    
-    print("<server recv>\n", recv)
-    send = parse(recv)
-    print("<server send>\n", send)
-    conn.send(json.dumps(send).encode() + b"\r\n")
-    conn.close()
+PORT = 8080
 
 
 def upload(value: str):
@@ -61,6 +43,7 @@ def delete(id):
 
 def chat(value: dict):
     print("chat")
+
     def sub_chat(base: str, id: str, lora: str, query: str, history: list[dict]):
         model = create_model(base, id, lora)
         response = model.chat(query, history)
@@ -72,7 +55,8 @@ def chat(value: dict):
     lora = value["lora"]
     query = value["query"]
     history = value["history"]
-    
+    # config = value["config"]
+
     return {
         "type": "chat",
         "value": sub_chat(base, id, lora, query, history),
@@ -81,6 +65,7 @@ def chat(value: dict):
 
 def finetune(value: dict):
     print("finetune")
+
     def sub_finetune(base: str, id: str, dataset: str, name: str, steps: int):
         os.system(
             f"conda run -n llm python finetune.py"
@@ -113,22 +98,19 @@ def parse(recv: str):
     return operate[recv["type"]](recv["value"])
 
 
-def main():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((HOST, PORT))
-    server_socket.listen(2)
+async def handle(websocket):
+    recv = await websocket.recv()
+    print("<server recv>\n", recv)
+    send = parse(recv)
+    print("<server send>\n", send)
+    await websocket.send(json.dumps(send))
 
-    while True:
-        print("Try Connection")
-        try:
-            conn, address = server_socket.accept()
-            thread = threading.Thread(target=handle, args=(conn, address))
-            thread.start()
 
-        except Exception as err:
-            print(err)
-            continue
+async def main():
+    async with serve(handle, HOST, PORT):
+        await asyncio.get_running_loop().create_future()  # run forever
 
 
 if __name__ == "__main__":
-    main()
+    print(f"start serving on http:/{HOST}:{PORT}")
+    asyncio.run(main())
