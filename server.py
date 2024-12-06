@@ -1,5 +1,7 @@
 import os
 import json
+import yaml
+import subprocess
 import asyncio
 from websockets import serve
 
@@ -9,18 +11,20 @@ HOST = "localhost"
 PORT = 8080
 
 
-def upload(value: str):
+def upload(value: dict):
     print("upload")
-    model = json.loads(value)
-    id = model["id"]
-    zip_file = model["zip_file"]
+    
+    id = value["id"]
+    version = value["version"]
+    url = value["url"]
+    
     if os.path.exists(f"models/{id}"):
         msg = "Model already exists!"
     else:
         os.makedirs(f"models/{id}")
-        with open(f"models/{id}.zip", "wb") as file:
-            file.write(zip_file)
-        os.system()
+        os.system(f"wget -P models/{id} {url}")
+        os.system(f"unzip -d models/{id} models/{id}/{id}.zip")
+        os.system(f"rm -rf unzip models/{id}/{id}.zip")
         msg = "Succesfully uploaded."
     return {
         "type": "message",
@@ -28,8 +32,10 @@ def upload(value: str):
     }
 
 
-def delete(id):
+def delete(value: dict):
     print("delete")
+    
+    id = value["id"]
     if os.path.exists(f"models/{id}"):
         os.system(f"rm -rf models/{id}")
         msg = "Succesfully deleted."
@@ -44,46 +50,51 @@ def delete(id):
 def chat(value: dict):
     print("chat")
 
-    def sub_chat(base: str, id: str, lora: str, query: str, history: list[dict]):
-        model = create_model(base, id, lora)
+    def sub_chat(id: str, query: str, history: list[dict]):
+        model = create_model(id)
         response = model.chat(query, history)
         del model
         return response
 
-    base = value["base"]
     id = value["id"]
-    lora = value["lora"]
     query = value["query"]
-    history = value["history"]
+    history = None  # value["history"]
     # config = value["config"]
 
     return {
         "type": "chat",
-        "value": sub_chat(base, id, lora, query, history),
+        "value": sub_chat(id, query, history),
     }
 
 
 def finetune(value: dict):
     print("finetune")
 
-    def sub_finetune(base: str, id: str, dataset: str, name: str, steps: int):
-        os.system(
-            f"conda run -n llm python finetune.py"
-            + f" --base {base}"
-            + f" --id {id}"
-            + f" --dataset {dataset}"
-            + f" --name {name}"
+    def sub_finetune(id: str, base: str, dataset: str, steps: int):
+        cmd = f"conda run -n llm python finetune.py" \
+            + f" --id {id}" \
+            + f" --base {base}" \
+            + f" --dataset {dataset}" \
             + f" --steps {steps}"
-        )
-
-    base = value["base"]
+        os.system(cmd)
+    
     id = value["id"]
+    base = value["base"]
     dataset = value["dataset"]
-    name = value["name"]
     steps = value["steps"]
-    sub_finetune(base, id, dataset, name, steps)
-
-    return {"type": "message", "value": f"{name}/checkpoint-{steps}"}
+    sub_finetune(id, base, dataset, steps)
+    # os.system("Succesfully finetuned.")
+    
+    configs = {
+        "class": "Gemma_2" if "gemma" in base.lower() else "Llama_3_2",
+        "base": base,
+        "lora": f"{id}/checkpoint-{steps}",
+    }
+    os.makedirs(f"models/{id}", exist_ok=True)
+    with open(f"models/{id}/configs.yaml", "w") as file:
+        yaml.dump(configs, file)
+    
+    return {"type": "message", "value": f"Succesfully finetuned."}
 
 
 def parse(recv: str):
@@ -99,6 +110,7 @@ def parse(recv: str):
 
 
 async def handle(websocket):
+    print("handling")
     recv = await websocket.recv()
     print("<server recv>\n", recv)
     send = parse(recv)
@@ -112,5 +124,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    print(f"start serving on http:/{HOST}:{PORT}")
+    print(f"start serving on http://{HOST}:{PORT}")
     asyncio.run(main())

@@ -7,7 +7,7 @@ from .llm import LLM
 
 
 class Gemma_2_IT(LLM):
-    def __init__(self, id: str = "google/gemma-2-2b-it", lora: str = None):
+    def __init__(self, id: str = "gemma-2-2b-it", lora: str = None):
         super().__init__(id)
         
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -17,6 +17,7 @@ class Gemma_2_IT(LLM):
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
             ),
+            local_files_only=True,
             trust_remote_code=True,
             device_map="cuda",
         ).eval()

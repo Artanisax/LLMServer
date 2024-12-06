@@ -8,7 +8,7 @@ from .llm import LLM
 
 
 class Llama_3_2(LLM):
-    def __init__(self, id: str = "meta-llama/Llama-3.2-1B", lora: str = None):
+    def __init__(self, id: str = "Llama-3.2-1B", lora: str = None):
         super().__init__(id)
         
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -18,6 +18,7 @@ class Llama_3_2(LLM):
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
             ),
+            local_files_only=True,
             trust_remote_code=True,
             device_map="cuda",
         ).eval()

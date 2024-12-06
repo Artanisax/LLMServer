@@ -7,13 +7,14 @@ from .llm import LLM
 
 
 class Llama_3_2_Instruct(LLM):
-    def __init__(self, id: str = "meta-llama/Llama-3.2-1B-Instruct", lora: str = None):
+    def __init__(self, id: str = "Llama-3.2-1B-Instruct", lora: str = None):
         super().__init__(id)
         self.system = "You are a helpful assistant."
 
         self.model = AutoModelForCausalLM.from_pretrained(
             os.path.join("models", id),
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
             trust_remote_code=True,
             device_map="cuda",
         ).eval()
