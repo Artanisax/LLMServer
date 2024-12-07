@@ -1,4 +1,4 @@
-HF_TOKEN="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"
+HF_TOKEN=UR_HF_TOKEN
 
 export HF_ENDPOINT="https://hf-mirror.com"
 
